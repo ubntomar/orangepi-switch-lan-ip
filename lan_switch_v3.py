@@ -27,7 +27,7 @@ CHECK_PERIOD_S = 1
 FAIL_WINDOW_S = 6
 UP_WINDOW_S = 6
 MIN_DWELL_S = 8
-ANNOUNCE_ARP_COUNT = 3
+ANNOUNCE_ARP_COUNT = 5  # Aumentado para mejor anuncio de cambios de IP
 
 # NUEVA FUNCIONALIDAD: Verificación de velocidad
 SPEED_THRESHOLD_MBPS = 10  # Megas,  Umbral mínimo de velocidad (configurable)
@@ -209,26 +209,47 @@ def delete_ip_safe(ip_cidr):
         logger.error(f"Error eliminando IP: {result.stderr if result else 'Unknown'}")
         return False
 
-def send_arp_announce(ip_str):
+def send_arp_announce(ip_str, aggressive=False):
     """Envía ARP gratuitous para anunciar la IP"""
     if not shutil.which("arping"):
         logger.debug("arping no disponible")
         return
     
-    logger.info(f"Enviando ARP gratuitous para {ip_str}")
+    count = ANNOUNCE_ARP_COUNT * 2 if aggressive else ANNOUNCE_ARP_COUNT
+    logger.info(f"Enviando ARP gratuitous para {ip_str} ({'agresivo' if aggressive else 'normal'}: {count} paquetes)")
     
     # Probar diferentes sintaxis
     for mode in ["-U", "-A"]:
         result = run_cmd(
-            ["arping", "-c", str(ANNOUNCE_ARP_COUNT), mode, "-I", IFACE, ip_str],
-            timeout=3,
+            ["arping", "-c", str(count), mode, "-I", IFACE, ip_str],
+            timeout=5 if aggressive else 3,
             silent=True
         )
         if result and result.returncode == 0:
-            logger.info("✓ ARP enviado")
+            logger.info(f"✓ ARP enviado ({mode} mode, {count} paquetes)")
             return
     
     logger.debug("ARP gratuitous falló (no crítico)")
+
+def pre_announce_ip(ip_str):
+    """Pre-anuncia la IP que se va a activar (preventivo)"""
+    if not shutil.which("arping"):
+        logger.debug("arping no disponible para pre-anuncio")
+        return
+    
+    logger.info(f"🔔 Pre-anunciando IP {ip_str} (preparando red)")
+    
+    # Usar modo Update (-U) con pocos paquetes para "calentar" ARP caches
+    result = run_cmd(
+        ["arping", "-c", "2", "-U", "-I", IFACE, ip_str],
+        timeout=2,
+        silent=True
+    )
+    
+    if result and result.returncode == 0:
+        logger.info("✓ Pre-anuncio ARP enviado")
+    else:
+        logger.debug("Pre-anuncio ARP falló (no crítico)")
 
 def check_interface_speed():
     """
@@ -294,6 +315,11 @@ def switch_to_secondary_safe():
         logger.warning("¡ADVERTENCIA! Ambas IPs presentes - situación peligrosa")
         logger.warning("Procediendo con cuidado...")
     
+    # PASO 0: Pre-anunciar la IP secundaria que vamos a activar
+    logger.info("PASO 0: Pre-anunciando IP secundaria...")
+    pre_announce_ip(IP_SECONDARY.split('/')[0])
+    time.sleep(0.2)  # Breve pausa para que se procese
+    
     # PASO 1: Eliminar primero la IP primaria (.1)
     if has_1:
         logger.info("PASO 1: Eliminando IP primaria PRIMERO...")
@@ -332,9 +358,9 @@ def switch_to_secondary_safe():
     logger.info(f"Estado final: {final_ips}")
     logger.info(f"Verificación: .1={has_1_final}, .254={has_254_final}")
     
-    # PASO 4: ARP announce (después de confirmar que tenemos .254)
+    # PASO 4: ARP announce AGRESIVO (después de confirmar que tenemos .254)
     if has_254_final:
-        send_arp_announce(IP_SECONDARY.split('/')[0])
+        send_arp_announce(IP_SECONDARY.split('/')[0], aggressive=True)
     
     # Evaluación del resultado
     success = has_254_final and not has_1_final
@@ -376,6 +402,11 @@ def switch_to_primary_safe():
         logger.warning("¡ADVERTENCIA! Ambas IPs presentes - situación peligrosa")
         logger.warning("Procediendo con cuidado...")
     
+    # PASO 0: Pre-anunciar la IP primaria que vamos a activar
+    logger.info("PASO 0: Pre-anunciando IP primaria...")
+    pre_announce_ip(IP_PRIMARY.split('/')[0])
+    time.sleep(0.2)  # Breve pausa para que se procese
+    
     # PASO 1: Eliminar primero la IP secundaria (.254)
     if has_254:
         logger.info("PASO 1: Eliminando IP secundaria PRIMERO...")
@@ -414,9 +445,9 @@ def switch_to_primary_safe():
     logger.info(f"Estado final: {final_ips}")
     logger.info(f"Verificación: .1={has_1_final}, .254={has_254_final}")
     
-    # PASO 4: ARP announce
+    # PASO 4: ARP announce AGRESIVO
     if has_1_final:
-        send_arp_announce(IP_PRIMARY.split('/')[0])
+        send_arp_announce(IP_PRIMARY.split('/')[0], aggressive=True)
     
     # Evaluación
     success = has_1_final and not has_254_final
