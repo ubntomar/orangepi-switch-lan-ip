@@ -1,43 +1,68 @@
-# OrangePi Switch LAN IP
+# Auto Switch LAN IP para Orange Pi
 
-A Python tool for switching LAN IP addresses on Orange Pi devices.
+> Script avanzado en Python para cambiar automáticamente la IP LAN de una interfaz en Orange Pi, con doble validación anti-falsos positivos.
 
-## Description
+## Descripción
 
-This project provides functionality to manage and switch between different LAN IP configurations on Orange Pi single-board computers.
+Este script monitoriza la conectividad a Internet y la velocidad de la interfaz LAN. Si detecta caída real (pings fallidos y velocidad baja), cambia de la IP primaria a la secundaria de forma segura, evitando bugs del kernel y falsos positivos. También restaura la IP primaria cuando la conectividad vuelve.
 
-## Features
+## Características principales
 
-- Switch between predefined IP configurations
-- Manage network interface settings
-- Support for multiple network profiles
-- Easy configuration management
+- Doble validación: solo cambia IP si fallan los pings **y** la velocidad de la interfaz es baja
+- Estrategia segura: nunca deja ambas IPs activas simultáneamente
+- Anuncio ARP automático tras cada cambio de IP
+- Logging detallado a archivo y consola
+- Anti-flapping: evita cambios rápidos e innecesarios
+- Recuperación automática ante estados anómalos
 
-## Requirements
+## Requisitos
 
-- Python 3.6+
-- Orange Pi device
-- Root/sudo privileges for network configuration
+- Python 3.8+
+- Orange Pi (o cualquier Linux con interfaz de red compatible)
+- Permisos de root (sudo)
+- Utilidades: `ip`, `arping`, `ping`
 
-## Installation
+## Instalación
 
 ```bash
-git clone https://github.com/yourusername/orangepi-switch-lan-ip.git
+git clone https://github.com/ubntomar/orangepi-switch-lan-ip.git
 cd orangepi-switch-lan-ip
-pip install -r requirements.txt
+# Instala dependencias del sistema si es necesario:
+sudo apt install iputils-arping iproute2
+# No requiere dependencias Python externas
 ```
 
-## Usage
+## Uso
 
 ```bash
-python main.py --help
+sudo python3 lan_switch_v3.py
 ```
 
-## Configuration
+El script debe ejecutarse como root. Monitorea la conectividad y cambia la IP de la interfaz configurada automáticamente.
 
-Configuration files are stored in the `config/` directory.
+## Configuración rápida
 
-## Contributing
+Edita las variables al inicio de `lan_switch_v3.py` para ajustar:
+
+- `IFACE`: nombre de la interfaz LAN (ej: enP1p1s0)
+- `IP_PRIMARY` y `IP_SECONDARY`: IPs a alternar
+- `PING_TARGETS`: hosts a los que se hace ping
+- `SPEED_THRESHOLD_MBPS`: umbral mínimo de velocidad para considerar caída real
+
+## Logs
+
+El log detallado se guarda en `/var/log/lan_ip_switch.log` y también se muestra por consola.
+
+## Seguridad
+
+El script nunca deja ambas IPs activas a la vez y recupera automáticamente la IP primaria ante errores o interrupciones.
+
+## Autor
+
+ubntomar
+
+---
+¡Contribuciones y mejoras bienvenidas!
 
 1. Fork the repository
 2. Create a feature branch
